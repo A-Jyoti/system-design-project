@@ -103,8 +103,22 @@ def index():
         #calculate distances
         d1=10
         d2=8
-        l = math.sqrt(x**2 -((x**2 - y**2 + d1**2)/(2*d1))**2)
-        m = math.sqrt(z**2 -((x**2 - y**2 + d2**2)/(2*d2))**2)
+        try:
+            expr1 = x**2 -((x**2 - y**2 + d1**2)/(2*d1))**2
+            expr2 = z**2 -((x**2 - y**2 + d2**2)/(2*d2))**2
+            
+            if expr1 < 0 or expr2 < 0:
+                l = "Invalid configuration"
+                m = "Invalid configuration"
+            else:
+                l = math.sqrt(expr1)
+                m = math.sqrt(expr2)
+            
+        except ValueError as e:
+            print(f"Math error: {e}")
+            l = "Error"
+            m = "Error"
+            
         print(f"Distances → x: {x:.2f} m, y: {y:.2f} m, z: {z:.2f} m")
         return render_template_string(HTML_TEMPLATE, r1=r1, r2=r2, r3=r3, total=total, x=x, y=y, z=z, l=l, m=m)
 
