@@ -101,8 +101,8 @@ def index():
         filtered_z = ma_filter.update(r3)
         z = rssi_to_distance(filtered_z)
         #calculate distances
-        d1=10
-        d2=8
+        d1=5
+        d2=5
         try:
             expr1 = x**2 -((x**2 - y**2 + d1**2)/(2*d1))**2
             expr2 = z**2 -((x**2 - y**2 + d2**2)/(2*d2))**2
