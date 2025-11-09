@@ -79,6 +79,7 @@ HTML_TEMPLATE = """
     <p>x: {{ x }}</p>
     <p>y: {{ y }}</p>
     <p>z: {{ z }}</p>
+    <p>coordinates:({{ l }}, {{ m }})</p>
 </body>
 </html>
 """
@@ -99,9 +100,13 @@ def index():
         y = rssi_to_distance(filtered_y)
         filtered_z = ma_filter.update(r3)
         z = rssi_to_distance(filtered_z)
-
+        #calculate distances
+        d1=10
+        d2=8
+        l = math.sqrt(x**2 -((x**2 - y**2 + d1**2)/(2*d1))**2)
+        m = math.sqrt(z**2 -((x**2 - y**2 + d2**2)/(2*d2))**2)
         print(f"Distances → x: {x:.2f} m, y: {y:.2f} m, z: {z:.2f} m")
-        return render_template_string(HTML_TEMPLATE, r1=r1, r2=r2, r3=r3, total=total, x=x, y=y, z=z)
+        return render_template_string(HTML_TEMPLATE, r1=r1, r2=r2, r3=r3, total=total, x=x, y=y, z=z, l=l, m=m)
 
     else:
         total = "Waiting for sync..."
@@ -114,7 +119,9 @@ def index():
             total=total,
             x="N/A",
             y="N/A",
-            z="N/A"
+            z="N/A",
+            l="N/A",
+            m="N/A",
         )
 
     
