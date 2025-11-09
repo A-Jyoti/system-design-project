@@ -92,7 +92,7 @@ def index():
         r2 = esp_data["rssi2"]["value"][-1]
         r3 = esp_data["rssi3"]["value"][-1]
 
-        ma_filter = MovingAverageFilter(window_size=5)
+        ma_filter = MovingAverageFilter()
         filtered_x = ma_filter.update(r1)
         x = rssi_to_distance(filtered_x)
         filtered_y = ma_filter.update(r2)
