@@ -13,7 +13,7 @@ esp_data = {
 }
 
 SYNC_TIMEOUT = 2  # seconds
-CSV_FILE = "dataset.csv"
+CSV_FILE = "dataset1.csv"
 
 # Hardcoded parameters
 D1 = 8.0

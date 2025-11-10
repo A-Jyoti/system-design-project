@@ -20,7 +20,7 @@ class MovingAverageFilter:
 rssi_filter = MovingAverageFilter(window_size=5)
 
 rssi1_value = None
-CSV_FILE = "dataset.csv"
+CSV_FILE = "dataset2.csv"
 DISTANCE = 12.3  
 
 if not os.path.exists(CSV_FILE):
