@@ -134,12 +134,265 @@ browser_clients = []
 SYNC_TIMEOUT = 2
 
 # Room parameters
-D1 = 5.0
-D2 = 4.0
-SAFETY_RADIUS = 0.02
+D1 = 4.8
+D2 = 6.6
+SAFETY_RADIUS = 1.0
 
 # ------------------ Web Page -------------------------
-HTML_PAGE = """ (HTML unchanged) """  # Keep your existing HTML exactly
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 RSSI Position Tracker</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            text-align: center; 
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 { color: #2E8B57; }
+        .container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .data-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .data-panel p { 
+            font-size: 18px; 
+            margin: 10px 0;
+        }
+        .visualization {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 2px solid #333;
+            background: #fafafa;
+        }
+        .label {
+            font-weight: bold;
+            color: #555;
+        }
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-left: 5px;
+        }
+        .status.connected {
+            background-color: #2ecc71;
+        }
+        .status.disconnected {
+            background-color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 ESP32 Position Tracker</h1>
+    <p>Connection: <span class="status disconnected" id="connectionStatus"></span></p>
+    
+    <div class="container">
+        <div class="data-panel">
+            <h2>📡 RSSI Values</h2>
+            <p><span class="label">RSSI 1:</span> <span id="r1">--</span> dBm</p>
+            <p><span class="label">RSSI 2:</span> <span id="r2">--</span> dBm</p>
+            <p><span class="label">RSSI 3:</span> <span id="r3">--</span> dBm</p>
+            
+            <h2>📏 Distances</h2>
+            <p><span class="label">x:</span> <span id="x">--</span> m</p>
+            <p><span class="label">y:</span> <span id="y">--</span> m</p>
+            <p><span class="label">z:</span> <span id="z">--</span> m</p>
+            
+            <h2>📍 Position</h2>
+            <p><span class="label">l:</span> <span id="l">--</span> m</p>
+            <p><span class="label">m:</span> <span id="m">--</span> m</p>
+        </div>
+        
+        <div class="visualization">
+            <h2>🗺️ Room Map ({{ d1 }}m × {{ d2 }}m)</h2>
+            <canvas id="roomCanvas" width="600" height="450"></canvas>
+            <p style="font-size: 14px; color: #666; margin-top: 10px;">
+                🔵 Person | ⭕ Safety Radius ({{ safety_radius }}m)
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const D1 = {{ d1 }};
+        const D2 = {{ d2 }};
+        const SAFETY_RADIUS = {{ safety_radius }};
+        const canvas = document.getElementById('roomCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusIndicator = document.getElementById('connectionStatus');
+        
+        // Calculate scale to fit room in canvas with padding
+        const padding = 40;
+        const scaleX = (canvas.width - 2 * padding) / D1;
+        const scaleY = (canvas.height - 2 * padding) / D2;
+        const scale = Math.min(scaleX, scaleY);
+        
+        // Current and target positions for smooth animation
+        let currentPos = { l: D1/2, m: D2/2 };
+        let targetPos = { l: D1/2, m: D2/2 };
+        let animationProgress = 1;
+        
+        // Convert room coordinates to canvas coordinates
+        function toCanvasCoords(l, m) {
+            return {
+                x: padding + l * scale,
+                y: canvas.height - padding - m * scale
+            };
+        }
+        
+        // Draw the room and person
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw room outline
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 3;
+            const roomStart = toCanvasCoords(0, 0);
+            const roomEnd = toCanvasCoords(D1, D2);
+            ctx.strokeRect(roomStart.x, roomEnd.y, roomEnd.x - roomStart.x, roomStart.y - roomEnd.y);
+            
+            // Draw grid
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            const gridSteps = 10;
+            for (let i = 1; i < gridSteps; i++) {
+                const x = padding + (canvas.width - 2*padding) * i / gridSteps;
+                ctx.beginPath();
+                ctx.moveTo(x, padding);
+                ctx.lineTo(x, canvas.height - padding);
+                ctx.stroke();
+                
+                const y = padding + (canvas.height - 2*padding) * i / gridSteps;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(canvas.width - padding, y);
+                ctx.stroke();
+            }
+            
+            // Draw ESP32 positions (corners)
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '12px Arial';
+            
+            const esp1 = toCanvasCoords(0, 0);
+            ctx.fillRect(esp1.x - 5, esp1.y - 5, 10, 10);
+            ctx.fillText('ESP1', esp1.x + 8, esp1.y + 15);
+            
+            const esp2 = toCanvasCoords(D1, 0);
+            ctx.fillRect(esp2.x - 5, esp2.y - 5, 10, 10);
+            ctx.fillText('ESP2', esp2.x - 35, esp2.y + 15);
+            
+            const esp3 = toCanvasCoords(0, D2);
+            ctx.fillRect(esp3.x - 5, esp3.y - 5, 10, 10);
+            ctx.fillText('ESP3', esp3.x + 8, esp3.y - 8);
+            
+            // Smooth animation
+            if (animationProgress < 1) {
+                animationProgress += 0.1;
+                if (animationProgress > 1) animationProgress = 1;
+                
+                currentPos.l = currentPos.l + (targetPos.l - currentPos.l) * 0.1;
+                currentPos.m = currentPos.m + (targetPos.m - currentPos.m) * 0.1;
+            }
+            
+            const pos = toCanvasCoords(currentPos.l, currentPos.m);
+            
+            // Draw safety radius
+            ctx.fillStyle = 'rgba(74, 144, 226, 0.15)';
+            ctx.strokeStyle = 'rgba(74, 144, 226, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, SAFETY_RADIUS * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Draw person
+            ctx.fillStyle = '#4a90e2';
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            if (animationProgress < 1) {
+                requestAnimationFrame(draw);
+            }
+        }
+        
+        draw();
+        
+        // WebSocket connection for BROWSER (receive-only)
+        const socket = new WebSocket("ws://10.114.196.229:5000/ws/client");
+        
+        socket.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.className = 'status connected';
+        };
+        
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            document.getElementById("r1").textContent = data.rssi1;
+            document.getElementById("r2").textContent = data.rssi2;
+            document.getElementById("r3").textContent = data.rssi3;
+            document.getElementById("x").textContent = data.x;
+            document.getElementById("y").textContent = data.y;
+            document.getElementById("z").textContent = data.z;
+            document.getElementById("l").textContent = data.l;
+            document.getElementById("m").textContent = data.m;
+            
+            if (typeof data.l === 'number' && typeof data.m === 'number') {
+                // Calculate Euclidean distance between current and new position
+                const dx = data.l - currentPos.l;
+                const dy = data.m - currentPos.m;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Only update if new position is outside the safety radius
+                if (distance > SAFETY_RADIUS) {
+                    targetPos.l = Math.max(0, Math.min(D1, data.l));
+                    targetPos.m = Math.max(0, Math.min(D2, data.m));
+                    animationProgress = 0;
+                    requestAnimationFrame(draw);
+                } else {
+                    console.log("Point within safety radius — not moving");
+                }
+            }
+        };
+        
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            statusIndicator.className = 'status disconnected';
+        };
+        
+        socket.onclose = () => {
+            console.log('WebSocket connection closed');
+            statusIndicator.className = 'status disconnected';
+            // Auto-reconnect after 3 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        };
+    </script>
+</body>
+</html>
+"""
 
 @app.route('/')
 def index():
