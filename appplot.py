@@ -48,9 +48,9 @@ clients = []  # connected web browsers
 SYNC_TIMEOUT = 2  # seconds
 
 # Room dimensions (you can modify these)
-D1 = 5.0  # meters
-D2 = 4.0  # meters
-SAFETY_RADIUS = 0.02  # meters - the safety bubble around the person
+D1 = 4.8  # meters
+D2 = 6.6  # meters
+SAFETY_RADIUS = 0.2  # meters - the safety bubble around the person
 
 # ------------------ Web Page -------------------------
 HTML_PAGE = """
