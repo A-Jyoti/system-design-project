@@ -48,9 +48,9 @@ clients = []  # connected web browsers
 SYNC_TIMEOUT = 2  # seconds
 
 # Room dimensions (you can modify these)
-D1 = 2.0  # meters
-D2 = 0.75  # meters
-SAFETY_RADIUS = 0.3  # meters - the safety bubble around the person
+D1 = 5.0  # meters
+D2 = 4.0  # meters
+SAFETY_RADIUS = 0.02  # meters - the safety bubble around the person
 
 # ------------------ Web Page -------------------------
 HTML_PAGE = """
@@ -199,7 +199,7 @@ HTML_PAGE = """
             ctx.fillText('ESP2', esp2.x - 35, esp2.y + 15);
             
             // ESP3 at (0, D2)
-            const esp3 = toCanvasCoords(0, D2);
+            const esp3 = toCanvasCoords(D1, D2);
             ctx.fillRect(esp3.x - 5, esp3.y - 5, 10, 10);
             ctx.fillText('ESP3', esp3.x + 8, esp3.y - 8);
             
