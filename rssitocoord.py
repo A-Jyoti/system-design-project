@@ -12,6 +12,20 @@ esp_data = {
     "rssi3": {"value": None, "timestamp": 0},
 }
 
+class MovingAverageFilter:
+    def __init__(self, window_size=5):
+        self.window_size = window_size
+        self.window = []
+
+    def update(self, value):
+        """Add new RSSI reading and return averaged RSSI."""
+        self.window.append(value)
+        if len(self.window) > self.window_size:
+            self.window.pop(0)
+        return sum(self.window) / len(self.window)
+
+rssi_filter = MovingAverageFilter(window_size=5)
+
 SYNC_TIMEOUT = 2  # seconds
 CSV_FILE = "dataset1.csv"
 
@@ -25,7 +39,7 @@ DY = 1.5
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["d1", "d2", "rssi1", "rssi2", "rssi3", "dx", "dy"])
+        writer.writerow(["d1", "d2", "raw_rssi1","filtered_rssi1", "raw_rssi2","filtered_rssi2", "raw_rssi3","filtered_rssi3", "dx", "dy"])
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -58,12 +72,27 @@ def index():
 
         # Append to CSV when all readings are in sync
         with open(CSV_FILE, "a", newline="") as f:
+            raw_rssi1 = float(esp_data["rssi1"]["value"])
+            filtered_rssi1 = rssi_filter.update(raw_rssi1)
+            rssi1_value = round(filtered_rssi1, 2)
+            
+            raw_rssi2 = float(esp_data["rssi2"]["value"])
+            filtered_rssi2 = rssi_filter.update(raw_rssi2)
+            rssi2_value = round(filtered_rssi2, 2)
+            
+            raw_rssi3 = float(esp_data["rssi3"]["value"])
+            filtered_rssi3 = rssi_filter.update(raw_rssi3)
+            rssi3_value = round(filtered_rssi3, 2)
+            
             writer = csv.writer(f)
             writer.writerow([
                 D1, D2,
                 esp_data["rssi1"]["value"],
+                rssi1_value,
                 esp_data["rssi2"]["value"],
+                rssi2_value,
                 esp_data["rssi3"]["value"],
+                rssi3_value,
                 DX, DY
             ])
     else:

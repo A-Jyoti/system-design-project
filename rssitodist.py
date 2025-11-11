@@ -20,8 +20,8 @@ class MovingAverageFilter:
 rssi_filter = MovingAverageFilter(window_size=5)
 
 rssi1_value = None
-CSV_FILE = "dataset2.csv"
-DISTANCE = 12.3  
+CSV_FILE = "dataset3.csv"
+DISTANCE = 3.0  # Placeholder for distance calculation 
 
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, "w", newline="") as f:
@@ -49,7 +49,7 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, rssi=raw_rssi)
+    return render_template_string(HTML_TEMPLATE, rssi=rssi1_value)
 
 @app.route('/rssi', methods=['POST'])
 def update_data():
