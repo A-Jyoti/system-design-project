@@ -181,7 +181,7 @@ esp_data = {
     "rssi3": {"value": [], "timestamp": 0},
 }
 
-clients = []  # connected web browsers
+browser_clients = []  # connected web browsers (receive updates)
 SYNC_TIMEOUT = 2  # seconds
 
 # Room dimensions (you can modify these)
@@ -234,10 +234,24 @@ HTML_PAGE = """
             font-weight: bold;
             color: #555;
         }
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-left: 5px;
+        }
+        .status.connected {
+            background-color: #2ecc71;
+        }
+        .status.disconnected {
+            background-color: #e74c3c;
+        }
     </style>
 </head>
 <body>
     <h1>🎯 ESP32 Position Tracker</h1>
+    <p>Connection: <span class="status disconnected" id="connectionStatus"></span></p>
     
     <div class="container">
         <div class="data-panel">
@@ -271,6 +285,7 @@ HTML_PAGE = """
         const SAFETY_RADIUS = {{ safety_radius }};
         const canvas = document.getElementById('roomCanvas');
         const ctx = canvas.getContext('2d');
+        const statusIndicator = document.getElementById('connectionStatus');
         
         // Calculate scale to fit room in canvas with padding
         const padding = 40;
@@ -281,7 +296,7 @@ HTML_PAGE = """
         // Current and target positions for smooth animation
         let currentPos = { l: D1/2, m: D2/2 };
         let targetPos = { l: D1/2, m: D2/2 };
-        let animationProgress = 1; // 0 to 1
+        let animationProgress = 1;
         
         // Convert room coordinates to canvas coordinates
         function toCanvasCoords(l, m) {
@@ -293,7 +308,6 @@ HTML_PAGE = """
         
         // Draw the room and person
         function draw() {
-            // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             // Draw room outline
@@ -325,24 +339,21 @@ HTML_PAGE = """
             ctx.fillStyle = '#ff6b6b';
             ctx.font = '12px Arial';
             
-            // ESP1 at (0,0)
             const esp1 = toCanvasCoords(0, 0);
             ctx.fillRect(esp1.x - 5, esp1.y - 5, 10, 10);
             ctx.fillText('ESP1', esp1.x + 8, esp1.y + 15);
             
-            // ESP2 at (D1, 0)
             const esp2 = toCanvasCoords(D1, 0);
             ctx.fillRect(esp2.x - 5, esp2.y - 5, 10, 10);
             ctx.fillText('ESP2', esp2.x - 35, esp2.y + 15);
             
-            // ESP3 at (0, D2)
-            const esp3 = toCanvasCoords(D1, D2);
+            const esp3 = toCanvasCoords(0, D2);
             ctx.fillRect(esp3.x - 5, esp3.y - 5, 10, 10);
             ctx.fillText('ESP3', esp3.x + 8, esp3.y - 8);
             
             // Smooth animation
             if (animationProgress < 1) {
-                animationProgress += 0.1; // Adjust speed here
+                animationProgress += 0.1;
                 if (animationProgress > 1) animationProgress = 1;
                 
                 currentPos.l = currentPos.l + (targetPos.l - currentPos.l) * 0.1;
@@ -351,7 +362,7 @@ HTML_PAGE = """
             
             const pos = toCanvasCoords(currentPos.l, currentPos.m);
             
-            // Draw safety radius (semi-transparent)
+            // Draw safety radius
             ctx.fillStyle = 'rgba(74, 144, 226, 0.15)';
             ctx.strokeStyle = 'rgba(74, 144, 226, 0.4)';
             ctx.lineWidth = 2;
@@ -360,34 +371,35 @@ HTML_PAGE = """
             ctx.fill();
             ctx.stroke();
             
-            // Draw person (blue dot)
+            // Draw person
             ctx.fillStyle = '#4a90e2';
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, 8, 0, 2 * Math.PI);
             ctx.fill();
             
-            // Draw white center
             ctx.fillStyle = 'white';
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, 3, 0, 2 * Math.PI);
             ctx.fill();
             
-            // Request next frame if still animating
             if (animationProgress < 1) {
                 requestAnimationFrame(draw);
             }
         }
         
-        // Initial draw
         draw();
         
-        // WebSocket connection
-        const socket = new WebSocket("ws://" + window.location.host + "/ws");
+        // WebSocket connection for BROWSER (receive-only)
+        const socket = new WebSocket("ws://10.114.196.229:5000/ws/client");
+        
+        socket.onopen = () => {
+            console.log('WebSocket connected');
+            statusIndicator.className = 'status connected';
+        };
         
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             
-            // Update text displays
             document.getElementById("r1").textContent = data.rssi1;
             document.getElementById("r2").textContent = data.rssi2;
             document.getElementById("r3").textContent = data.rssi3;
@@ -397,7 +409,6 @@ HTML_PAGE = """
             document.getElementById("l").textContent = data.l;
             document.getElementById("m").textContent = data.m;
             
-            // Update position if valid
             if (typeof data.l === 'number' && typeof data.m === 'number') {
                 targetPos.l = Math.max(0, Math.min(D1, data.l));
                 targetPos.m = Math.max(0, Math.min(D2, data.m));
@@ -408,10 +419,16 @@ HTML_PAGE = """
         
         socket.onerror = (error) => {
             console.error('WebSocket error:', error);
+            statusIndicator.className = 'status disconnected';
         };
         
         socket.onclose = () => {
             console.log('WebSocket connection closed');
+            statusIndicator.className = 'status disconnected';
+            // Auto-reconnect after 3 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
         };
     </script>
 </body>
@@ -427,23 +444,40 @@ def index():
         safety_radius=SAFETY_RADIUS
     )
 
-# ------------------ WebSocket endpoint ----------------
+# ------------------ WebSocket for ESP32s (SEND data) ----------------
 @sock.route('/ws')
-def ws(ws):
-    clients.append(ws)
-    print("New client connected.")
+def ws_esp(ws):
+    print("ESP32 connected.")
     try:
         while True:
             msg = ws.receive()
             if msg is None:
-                break  # client disconnected
+                break
             data = json.loads(msg)
+            print(f"Received from ESP32: {data}")
             handle_rssi_data(data)
     except Exception as e:
-        print("WebSocket error:", e)
+        print(f"ESP32 WebSocket error: {e}")
     finally:
-        clients.remove(ws)
-        print("Client disconnected.")
+        print("ESP32 disconnected.")
+
+# ------------------ WebSocket for Browsers (RECEIVE data) ------------
+@sock.route('/ws/client')
+def ws_client(ws):
+    browser_clients.append(ws)
+    print(f"Browser client connected. Total clients: {len(browser_clients)}")
+    try:
+        # Keep connection alive - just wait for client to disconnect
+        while True:
+            msg = ws.receive(timeout=60)  # 60 second timeout
+            if msg is None:
+                break
+    except Exception as e:
+        print(f"Browser client error: {e}")
+    finally:
+        if ws in browser_clients:
+            browser_clients.remove(ws)
+        print(f"Browser client disconnected. Remaining: {len(browser_clients)}")
 
 # ------------------ Handle ESP32 data -----------------
 def handle_rssi_data(data):
@@ -489,11 +523,14 @@ def handle_rssi_data(data):
         }
 
         # Broadcast to all connected browsers
-        for c in clients[:]:
+        print(f"Broadcasting to {len(browser_clients)} clients: {payload}")
+        for client in browser_clients[:]:
             try:
-                c.send(json.dumps(payload))
-            except:
-                clients.remove(c)
+                client.send(json.dumps(payload))
+            except Exception as e:
+                print(f"Failed to send to client: {e}")
+                if client in browser_clients:
+                    browser_clients.remove(client)
     else:
         print("Data not in sync or missing; skipping computation.")
 
