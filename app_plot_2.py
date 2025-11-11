@@ -25,6 +25,129 @@ def rssi_to_distance(rssi_filtered):
     A, n = calibrate_path_loss(calib_distances, calib_rssi)
     return 10 ** ((A - rssi_filtered) / (10 * n))
 
+# -----------------coordinate calculation ----------------
+
+import numpy as np
+
+def sanitize_distances(distances, room_diag, min_d=0.05):
+    """Clamp distances to reasonable positive range to avoid zeros/negatives.
+       room_diag: approximate maximum distance in room (e.g., sqrt(D1^2 + D2^2)).
+    """
+    distances = np.array(distances, dtype=float)
+    max_d = room_diag * 1.2
+    distances = np.clip(distances, min_d, max_d)
+    return distances
+
+def multilateration_least_squares(positions, distances, weights=None):
+    """
+    Linearized least-squares multilateration (works with 3 or more receivers).
+    positions: Nx2 array-like of receiver coordinates [(x1,y1),(x2,y2),...]
+    distances: length-N array of measured distances (meters)
+    weights: optional length-(N-1) weights for the linear system (or None)
+    Returns: (px, py, residual_norm, success_flag)
+    """
+    p = np.asarray(positions, dtype=float)
+    r = np.asarray(distances, dtype=float)
+    N = p.shape[0]
+    if N < 3:
+        raise ValueError("Need at least 3 receivers for 2D multilateration")
+
+    # Reference receiver (first)
+    x0, y0 = p[0]
+    r0 = r[0]
+
+    # Build linear system: A * [px,py] = b
+    A = []
+    b = []
+    for i in range(1, N):
+        xi, yi = p[i]
+        ri = r[i]
+        Ai = [2*(xi - x0), 2*(yi - y0)]
+        bi = (r0**2 - ri**2) - (x0**2 - xi**2) - (y0**2 - yi**2)
+        A.append(Ai)
+        b.append(bi)
+    A = np.array(A, dtype=float)  # (N-1) x 2
+    b = np.array(b, dtype=float)  # (N-1)
+
+    # Apply weights if provided
+    if weights is not None:
+        w = np.asarray(weights, dtype=float)
+        if w.shape[0] != A.shape[0]:
+            raise ValueError("weights must match number of rows (N-1)")
+        W = np.sqrt(w)[:,None]  # scale rows by sqrt(weight)
+        A = A * W
+        b = b * W.ravel()
+
+    # Solve least squares
+    sol, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+    px, py = sol[0], sol[1]
+    # compute residual norm in terms of distance error
+    est_dists = np.sqrt((p[:,0]-px)**2 + (p[:,1]-py)**2)
+    residuals_vec = est_dists - r
+    resid_norm = np.linalg.norm(residuals_vec)
+
+    # success flag: if rank < 2, it's degenerate
+    success = (rank >= 2)
+    return (px, py, resid_norm, success)
+
+def coarse_grid_search(positions, distances, room_bounds, grid_res=0.1):
+    """
+    Fallback brute-force search over grid to find minimal residual.
+    room_bounds: (xmin,xmax,ymin,ymax)
+    grid_res: spacing in meters
+    Returns best (px,py,resid)
+    """
+    xmin, xmax, ymin, ymax = room_bounds
+    xs = np.arange(xmin, xmax + 1e-9, grid_res)
+    ys = np.arange(ymin, ymax + 1e-9, grid_res)
+    P = np.array(np.meshgrid(xs, ys)).T.reshape(-1,2)
+    p = np.asarray(positions)
+    r = np.asarray(distances)
+    best = (None, None, np.inf)
+    for px,py in P:
+        d = np.sqrt((p[:,0]-px)**2 + (p[:,1]-py)**2)
+        resid = np.linalg.norm(d - r)
+        if resid < best[2]:
+            best = (px, py, resid)
+    return best
+
+# -------------------------
+# Example usage for your 3-corner setup:
+# Assume receivers at corners: R1=(0,0), R2=(D1,0), R3=(0,D2)
+# r1,r2,r3 are distances computed from filtered RSSI (in meters)
+# -------------------------
+
+def estimate_position_from_rssi(r1, r2, r3, D1, D2, room_margin=0.1):
+    # receiver positions
+    positions = [(0.0, 0.0), (D1, 0.0), (0.0, D2)]
+    # sanitize and clamp distances
+    room_diag = np.sqrt(D1**2 + D2**2)
+    dists = sanitize_distances([r1, r2, r3], room_diag)
+
+    # optional: compute simple weights from variance/stability if available
+    # For now, equal weights:
+    weights = None
+
+    px, py, resid_norm, success = multilateration_least_squares(positions, dists, weights)
+    if not success or np.isnan(px) or np.isnan(py):
+        # fallback to coarse grid search over room
+        xmin, xmax, ymin, ymax = -room_margin, D1 + room_margin, -room_margin, D2 + room_margin
+        bx, by, bres = coarse_grid_search(positions, dists, (xmin, xmax, ymin, ymax), grid_res=0.05)
+        return bx, by, bres, False
+
+    # if residual very large (meaning distances inconsistent), try grid fallback too
+    if resid_norm > max(0.5, 0.1 * room_diag):  # tune threshold as needed
+        xmin, xmax, ymin, ymax = -room_margin, D1 + room_margin, -room_margin, D2 + room_margin
+        bx, by, bres = coarse_grid_search(positions, dists, (xmin, xmax, ymin, ymax), grid_res=0.05)
+        # if grid gives better residual, use it
+        if bres < resid_norm:
+            return bx, by, bres, False
+
+    return px, py, resid_norm, True
+
+
+# ---------------------------------------------------------
+
 # ------------------ Moving Average -------------------
 # class MovingAverageFilter:
 #     def __init__(self, window_size=5):
@@ -357,15 +480,7 @@ def handle_rssi_data(data):
         filtered_z = ma_filter_z.update(r3)
         z = rssi_to_distance(filtered_z)
         
-        try:
-            expr1 = abs(x**2 - ((x**2 - y**2 + D1**2)/(2*D1))**2)
-            expr2 = abs(z**2 - ((x**2 - y**2 + D2**2)/(2*D2))**2)
-            l = math.sqrt(expr1)
-            m = math.sqrt(expr2)
-        except ValueError:
-            l = "Err"
-            m = "Err"
-
+        l, m, resid, success = estimate_position_from_rssi(x, y, z, D1, D2, room_margin=0.1)
         payload = {
             "rssi1": r1, "rssi2": r2, "rssi3": r3,
             "x": round(x, 2), "y": round(y, 2), "z": round(z, 2),
