@@ -476,6 +476,38 @@ def handle_rssi_data(data):
                 if client in browser_clients:
                     browser_clients.remove(client)
     else:
+        r1 = 0.0
+        r2 = 0.0
+        r3 = 0.0
+
+        try:
+            r1 = esp_data["rssi1"]["value"][-1]
+        except IndexError:
+            pass
+
+        try:
+            r2 = esp_data["rssi2"]["value"][-1]
+        except IndexError:
+            pass
+
+        try:
+            r3 = esp_data["rssi3"]["value"][-1]
+        except IndexError:
+            pass
+
+        payload = {
+            "rssi1": r1, "rssi2": r2, "rssi3": r3,
+        }
+
+        print(f"Broadcasting to {len(browser_clients)} clients: {payload}")
+        for client in browser_clients[:]:
+            try:
+                client.send(json.dumps(payload))
+            except Exception as e:
+                print(f"Failed to send to client: {e}")
+                if client in browser_clients:
+                    browser_clients.remove(client)
+                    
         print("Data not in sync or missing; skipping computation.")
 
 if __name__ == '__main__':
