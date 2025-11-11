@@ -134,9 +134,9 @@ browser_clients = []
 SYNC_TIMEOUT = 2
 
 # Room parameters
-D1 = 4.8
-D2 = 6.6
-SAFETY_RADIUS = 1.0
+D1 = 6.6
+D2 = 4.8
+SAFETY_RADIUS = 0.4
 
 # ------------------ Web Page -------------------------
 HTML_PAGE = """
@@ -507,7 +507,7 @@ def handle_rssi_data(data):
                 print(f"Failed to send to client: {e}")
                 if client in browser_clients:
                     browser_clients.remove(client)
-                    
+
         print("Data not in sync or missing; skipping computation.")
 
 if __name__ == '__main__':
