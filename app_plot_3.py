@@ -21,9 +21,10 @@ def calibrate_path_loss(distances, rssi_values):
     return popt  # (A, n)
 
 def rssi_to_distance(rssi_filtered):
-    calib_distances = [1, 2, 3, 4, 5]
-    calib_rssi = [-59, -65, -69, -72, -74]
+    calib_distances = [0.5, 1, 2, 3, 4, 5]
+    calib_rssi = [-57.5, -65, -72.5, -77, -80, -82.5]
     A, n = calibrate_path_loss(calib_distances, calib_rssi)
+    print("\nA= ", A, " n= ", n, "\n")
     return 10 ** ((A - rssi_filtered) / (10 * n))
 
 # ----------------- Coordinate Calculation ----------------
